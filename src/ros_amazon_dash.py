@@ -7,6 +7,7 @@ import os
 from yaml import load, CLoader as Loader
 import socket
 import rospy
+from std_msgs.msg import String
 
 try:
     import amazon_dash.listener
@@ -23,10 +24,11 @@ try:
     import logging
     from my_common.rospy_logging import ConnectPythonLoggingToROS
 except ImportError:
-    rospy.logwarn("Fail to connect phue logger to ros")
+    rospy.logwarn("Not found rospy_logging")
 else:
     amazon_dash.listener.logger.addHandler(ConnectPythonLoggingToROS())
     amazon_dash.listener.logger.setLevel(logging.DEBUG)
+
 
 DEFAULT_NODE_NAME = "ros_amazon_dash"
 
@@ -51,33 +53,40 @@ class Listener(object):
 
     def __init__(self, config_path):
         self.config = Config(config_path)
+        print self.config
         self.settings = self.config.get('settings', {})
         self.devices = {key.lower(): Device(key, value) for key, value in self.config['devices'].items()}
         assert len(self.devices) == len(self.config['devices']), "Duplicate(s) MAC(s) on devices config."
 
-    def on_push(self, device):
-        src = device.src.lower()
-        if last_execution[src] + self.settings.get('delay', 10) > time.time():
-            return
-        last_execution[src] = time.time()
-        print "pushed!"
+    def on_push(self, callback):
+        def _on_push(device):
+            src = device.src.lower()
+            if last_execution[src] + self.settings.get('delay', 10) > time.time():
+                return
+            last_execution[src] = time.time()
+            rospy.loginfo("Pushed: " + device.name + ", "+src)
+            if callback is not None:
+                callback(self.devices[src].name)
+
+        return _on_push
 
     def execute(self, device):
         src = device.src.lower()
         device = self.devices[src]
         device.execute(root_allowed=self.root_allowed)
 
-    def run(self, root_allowed=False):
+    def run(self, root_allowed=False, callback=None):
         self.root_allowed = root_allowed
-        scan(self.on_push, lambda d: d.src.lower() in self.devices)
+        scan(self.on_push(callback), lambda d: d.src.lower() in self.devices)
 
 
 # --------------------------------------------
 if __name__ == '__main__':
     rospy.init_node(DEFAULT_NODE_NAME, anonymous=True, log_level=rospy.DEBUG)
+    pub = rospy.Publisher('chatter', String, queue_size=10)
 
     try:
-        Listener(os.path.abspath(os.path.dirname(__file__)) + "/amazon-dash.yml").run(True)
+        Listener(os.path.abspath(os.path.dirname(__file__)) + "/amazon-dash.yml").run(True, pub.publish)
     except socket.error as e:
         rospy.logerr(e)
         rospy.logerr("You should do...")
@@ -86,12 +95,4 @@ if __name__ == '__main__':
         rospy.logerr("# source devel/setup.bash")
         rospy.logerr("# rosrun ros_amazon_dash ros_amazon_dash.py")
     else:
-        # rospy.spin()
-        from std_msgs.msg import String
-        pub = rospy.Publisher('chatter', String, queue_size=10)
-        r = rospy.Rate(10)  # 10hz
-        while not rospy.is_shutdown():
-            str = "hello world %s" % rospy.get_time()
-            rospy.loginfo(str)
-            pub.publish(str)
-            r.sleep()
+        rospy.spin()
