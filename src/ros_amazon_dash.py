@@ -54,6 +54,7 @@ class Listener(object):
     def __init__(self, devices, settings):
         self.settings = settings
         self.devices = devices
+        print self.devices
 
     def on_push(self, callback):
         def _on_push(device):
@@ -61,9 +62,12 @@ class Listener(object):
             if last_execution[src] + self.settings.get('delay', 10) > time.time():
                 return
             last_execution[src] = time.time()
-            rospy.loginfo("Pushed: " + device.name + ", " + src)
+            if not self.devices.has_key(src):
+                rospy.logwarn("Not found " + src + " in yaml file")
+                return
+            rospy.loginfo("Pushed: " + self.devices[src]["name"])
             if callback is not None:
-                callback(str(self.devices[src].name))
+                callback(str(self.devices[src]["name"]))
 
         return _on_push
 
