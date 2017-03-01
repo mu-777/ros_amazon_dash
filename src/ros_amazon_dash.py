@@ -54,7 +54,6 @@ class Listener(object):
     def __init__(self, devices, settings):
         self.settings = settings
         self.devices = devices
-        print self.devices
 
     def on_push(self, callback):
         def _on_push(device):
