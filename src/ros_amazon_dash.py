@@ -29,8 +29,8 @@ else:
     amazon_dash.listener.logger.addHandler(ConnectPythonLoggingToROS())
     amazon_dash.listener.logger.setLevel(logging.DEBUG)
 
-
 DEFAULT_NODE_NAME = "ros_amazon_dash"
+DEFAULT_TOPIC_NAME_PUSHED = "pushed"
 
 
 class Config(dict):
@@ -51,12 +51,9 @@ class Config(dict):
 class Listener(object):
     root_allowed = False
 
-    def __init__(self, config_path):
-        self.config = Config(config_path)
-        print self.config
-        self.settings = self.config.get('settings', {})
-        self.devices = {key.lower(): Device(key, value) for key, value in self.config['devices'].items()}
-        assert len(self.devices) == len(self.config['devices']), "Duplicate(s) MAC(s) on devices config."
+    def __init__(self, devices, settings):
+        self.settings = settings
+        self.devices = devices
 
     def on_push(self, callback):
         def _on_push(device):
@@ -64,9 +61,9 @@ class Listener(object):
             if last_execution[src] + self.settings.get('delay', 10) > time.time():
                 return
             last_execution[src] = time.time()
-            rospy.loginfo("Pushed: " + device.name + ", "+src)
+            rospy.loginfo("Pushed: " + device.name + ", " + src)
             if callback is not None:
-                callback(self.devices[src].name)
+                callback(str(self.devices[src].name))
 
         return _on_push
 
@@ -83,10 +80,15 @@ class Listener(object):
 # --------------------------------------------
 if __name__ == '__main__':
     rospy.init_node(DEFAULT_NODE_NAME, anonymous=True, log_level=rospy.DEBUG)
-    pub = rospy.Publisher('chatter', String, queue_size=10)
+    pub = rospy.Publisher(DEFAULT_TOPIC_NAME_PUSHED, String, queue_size=10)
+    devices = rospy.get_param("~devices", {'ff:ff:ff:ff:ff:ff': {'cmd': 'No config file',
+                                                                 'user': 'No config file',
+                                                                 'name': 'No config file'}
+                                           })
+    settings = rospy.get_param("~settings", {'delay': 0})
 
     try:
-        Listener(os.path.abspath(os.path.dirname(__file__)) + "/amazon-dash.yml").run(True, pub.publish)
+        Listener(devices, settings).run(True, pub.publish)
     except socket.error as e:
         rospy.logerr(e)
         rospy.logerr("You should do...")
@@ -94,5 +96,7 @@ if __name__ == '__main__':
         rospy.logerr("# cd <your catkin_workspace>")
         rospy.logerr("# source devel/setup.bash")
         rospy.logerr("# rosrun ros_amazon_dash ros_amazon_dash.py")
+        rospy.logerr("if you want to know mac address of the dash, do...")
+        rospy.logerr("# sudo amazon-dash discovery")
     else:
         rospy.spin()
